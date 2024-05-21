@@ -22,8 +22,7 @@ module.exports = new EntitySchema({
             nullable: true
         },
         linkPrecedence: {
-            type: 'enum',
-            enum: ['primary', 'secondary'],
+            type: 'varchar', // Change enum to varchar
             default: 'primary'
         },
         createdAt: {
