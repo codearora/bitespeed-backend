@@ -127,8 +127,10 @@ app.post('/identify', async (req, res) => {
                 primaryContact = oldestContact;
 
                 // Update the contacts with the same phone number to be secondary and link them to the primary
+                var flag = false;
                 for (const contact of existingContacts) {
                     if (contact.phoneNumber === phoneNumber && contact.id !== primaryContact.id) {
+                        flag = true;
                         contact.linkPrecedence = 'secondary';
                         contact.linkedId = primaryContact.id;
                         contact.updatedAt = new Date();
@@ -136,6 +138,20 @@ app.post('/identify', async (req, res) => {
                         secondaryContacts.push(contact.id);
                         primaryEmails.add(contact.email);
                         primaryPhoneNumbers.add(contact.phoneNumber);
+                    }
+                }
+                if (flag == false) {
+                    for (const contact of existingContacts) {
+                        if (contact.email === email && contact.id !== primaryContact.id) {
+                            flag = true;
+                            contact.linkPrecedence = 'secondary';
+                            contact.linkedId = primaryContact.id;
+                            contact.updatedAt = new Date();
+                            await contactRepository.save(contact);
+                            secondaryContacts.push(contact.id);
+                            primaryEmails.add(contact.email);
+                            primaryPhoneNumbers.add(contact.phoneNumber);
+                        }
                     }
                 }
 
