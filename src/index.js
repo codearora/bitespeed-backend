@@ -92,17 +92,12 @@ app.post('/identify', async (req, res) => {
         } else {
             let primaryContact;
             let secondaryContacts = [];
+            let primaryEmails = new Set();
+            let primaryPhoneNumbers = new Set();
+
             // Find the oldest contact among the existing contacts
             const oldestContact = existingContacts.reduce((oldest, current) => {
-                if (current.createdAt < oldest.createdAt) {
-                    primaryContact = oldest;
-                    secondaryContacts.push(current);
-                    return current;
-                } else {
-                    primaryContact = current;
-                    secondaryContacts.push(oldest);
-                    return oldest;
-                }
+                return current.createdAt < oldest.createdAt ? current : oldest;
             });
 
             // Check if the existing contacts have both email and phone number
@@ -127,9 +122,40 @@ app.post('/identify', async (req, res) => {
                         secondaryContactIds: [],
                     },
                 });
+            } else if (hasEmail && hasPhoneNumber) {
+                // Make the oldest contact the primary
+                primaryContact = oldestContact;
+
+                // Update the contacts with the same phone number to be secondary and link them to the primary
+                for (const contact of existingContacts) {
+                    if (contact.phoneNumber === phoneNumber && contact.id !== primaryContact.id) {
+                        contact.linkPrecedence = 'secondary';
+                        contact.linkedId = primaryContact.id;
+                        contact.updatedAt = new Date();
+                        await contactRepository.save(contact);
+                        secondaryContacts.push(contact.id);
+                        primaryEmails.add(contact.email);
+                        primaryPhoneNumbers.add(contact.phoneNumber);
+                    }
+                }
+
+                primaryEmails.add(primaryContact.email);
+                primaryPhoneNumbers.add(primaryContact.phoneNumber);
+
+                // Return details of the oldest primary contact and the secondary contacts
+                return res.json({
+                    contact: {
+                        primaryContactId: primaryContact.id,
+                        emails: Array.from(primaryEmails),
+                        phoneNumbers: Array.from(primaryPhoneNumbers),
+                        secondaryContactIds: secondaryContacts,
+                    },
+                });
             } else if (hasEmail && !hasPhoneNumber) {
                 // If email exists but phone number doesn't, make the existing primary contact as primary
                 // and create a new secondary contact
+                primaryContact = existingContacts.find(contact => contact.email === email);
+
                 const newSecondaryContact = contactRepository.create({
                     email,
                     phoneNumber,
@@ -138,18 +164,23 @@ app.post('/identify', async (req, res) => {
                 });
                 await contactRepository.save(newSecondaryContact);
 
+                primaryEmails.add(primaryContact.email);
+                primaryPhoneNumbers.add(phoneNumber);
+
                 // Return details of the existing primary contact and the new secondary contact
                 return res.json({
                     contact: {
                         primaryContactId: primaryContact.id,
-                        emails: [primaryContact.email, newSecondaryContact.email],
-                        phoneNumbers: [primaryContact.phoneNumber, newSecondaryContact.phoneNumber],
+                        emails: Array.from(primaryEmails),
+                        phoneNumbers: Array.from(primaryPhoneNumbers),
                         secondaryContactIds: [newSecondaryContact.id],
                     },
                 });
             } else if (!hasEmail && hasPhoneNumber) {
                 // If phone number exists but email doesn't, make the existing primary contact as primary
                 // and create a new secondary contact
+                primaryContact = existingContacts.find(contact => contact.phoneNumber === phoneNumber);
+
                 const newSecondaryContact = contactRepository.create({
                     email,
                     phoneNumber,
@@ -158,32 +189,15 @@ app.post('/identify', async (req, res) => {
                 });
                 await contactRepository.save(newSecondaryContact);
 
+                primaryEmails.add(email);
+                primaryPhoneNumbers.add(primaryContact.phoneNumber);
+
                 // Return details of the existing primary contact and the new secondary contact
                 return res.json({
                     contact: {
                         primaryContactId: primaryContact.id,
-                        emails: [primaryContact.email, newSecondaryContact.email],
-                        phoneNumbers: [primaryContact.phoneNumber, newSecondaryContact.phoneNumber],
-                        secondaryContactIds: [newSecondaryContact.id],
-                    },
-                });
-            } else {
-                // If both email and phone number exist, make the oldest primary contact as primary
-                // and create a new secondary contact
-                const newSecondaryContact = contactRepository.create({
-                    email,
-                    phoneNumber,
-                    linkedId: oldestContact.id,
-                    linkPrecedence: 'secondary',
-                });
-                await contactRepository.save(newSecondaryContact);
-
-                // Return details of the oldest primary contact and the new secondary contact
-                return res.json({
-                    contact: {
-                        primaryContactId: oldestContact.id,
-                        emails: [oldestContact.email, newSecondaryContact.email],
-                        phoneNumbers: [oldestContact.phoneNumber, newSecondaryContact.phoneNumber],
+                        emails: Array.from(primaryEmails),
+                        phoneNumbers: Array.from(primaryPhoneNumbers),
                         secondaryContactIds: [newSecondaryContact.id],
                     },
                 });
@@ -194,6 +208,7 @@ app.post('/identify', async (req, res) => {
         return res.status(500).json({ error: 'Internal server error.' });
     }
 });
+
 
 
 
